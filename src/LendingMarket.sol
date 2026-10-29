@@ -23,8 +23,9 @@ contract LendingMarket {
 
     uint256 internal constant FACTOR = 1e18;
 
-    /// @dev Oldest oracle answer the market will price against. Matches a one hour heartbeat.
-    uint256 internal constant MAX_PRICE_AGE = 1 hours;
+    /// @dev Oldest oracle answer the market will price against. A one hour heartbeat plus slack
+    ///      for a round that lands late.
+    uint256 internal constant MAX_PRICE_AGE = 1 hours + 15 minutes;
 
     /// @dev Highest borrow rate governance can set, 100% APR expressed per second.
     uint256 internal constant MAX_BORROW_RATE = 1e18 / uint256(365 days);
