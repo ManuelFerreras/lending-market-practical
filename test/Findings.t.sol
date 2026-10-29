@@ -149,6 +149,24 @@ contract FindingsTest is Test {
 
         assertEq(address(market.oracle()), address(wethOracle));
     }
+
+    // Bob posts 10 WETH and borrows 15,000 (limit 16,000). Nobody touches the market for a year,
+    // so he really owes about 15,750. He then withdraws 0.6 WETH, which leaves 15,040 of borrowing
+    // power. That only passes if the health check reads the stale 15,000.
+    function test_F4_withdraw_collateral_checks_health_on_accrued_debt() public {
+        _postCollateral(borrower, 10e18);
+        vm.prank(borrower);
+        market.borrow(15_000e18);
+
+        vm.warp(block.timestamp + 365 days);
+        wethOracle.setPrice(int256(WETH_PRICE));
+
+        vm.prank(borrower);
+        vm.expectRevert("would be undercollateralized");
+        market.withdrawCollateral(0.6e18);
+
+        assertEq(market.collateralBalance(borrower), 10e18);
+    }
 }
 
 /// @notice A feed that quotes 8 decimals, like most Chainlink USD feeds.
