@@ -103,6 +103,12 @@ contract LendingMarket {
     // Initialization
     // -------------------------------------------------------------------------------------------
 
+    /// @dev Locks the implementation itself. Runs in the implementation's storage only, so the
+    ///      proxy still initializes through initialize().
+    constructor() {
+        _initialized = true;
+    }
+
     function initialize(
         address admin_,
         address pauseGuardian_,
