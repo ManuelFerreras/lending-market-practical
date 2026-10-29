@@ -23,6 +23,9 @@ contract LendingMarket {
 
     uint256 internal constant FACTOR = 1e18;
 
+    /// @dev Oldest oracle answer the market will price against. Matches a one hour heartbeat.
+    uint256 internal constant MAX_PRICE_AGE = 1 hours;
+
     // -------------------------------------------------------------------------------------------
     // Storage
     // -------------------------------------------------------------------------------------------
@@ -326,7 +329,9 @@ contract LendingMarket {
 
     /// @notice Collateral price in base-asset terms, 1e18 scaled.
     function getPrice() public view returns (uint256) {
-        (, int256 answer,,,) = oracle.latestRoundData();
+        (, int256 answer,, uint256 updatedAt,) = oracle.latestRoundData();
+        require(answer > 0, "bad price");
+        require(block.timestamp - updatedAt <= MAX_PRICE_AGE, "stale price");
         return uint256(answer);
     }
 
@@ -348,6 +353,7 @@ contract LendingMarket {
 
     function setOracle(address newOracle) external onlyAdmin {
         require(newOracle != address(0), "zero oracle");
+        require(IPriceOracle(newOracle).decimals() == 18, "oracle decimals");
         oracle = IPriceOracle(newOracle);
         emit OracleUpdated(newOracle);
     }
