@@ -26,6 +26,9 @@ contract LendingMarket {
     /// @dev Oldest oracle answer the market will price against. Matches a one hour heartbeat.
     uint256 internal constant MAX_PRICE_AGE = 1 hours;
 
+    /// @dev Highest borrow rate governance can set, 100% APR expressed per second.
+    uint256 internal constant MAX_BORROW_RATE = 1e18 / uint256(365 days);
+
     // -------------------------------------------------------------------------------------------
     // Storage
     // -------------------------------------------------------------------------------------------
@@ -366,6 +369,9 @@ contract LendingMarket {
     {
         require(collateralFactor_ <= FACTOR, "cf too high");
         require(liquidationIncentive_ >= FACTOR, "incentive below par");
+        // At or above 1, each liquidation cuts borrowing power by at least as much as it cuts debt.
+        require(collateralFactor_ * liquidationIncentive_ < FACTOR * FACTOR, "cf * incentive too high");
+        require(borrowRatePerSecond_ <= MAX_BORROW_RATE, "rate too high");
 
         accrueInterest();
 
