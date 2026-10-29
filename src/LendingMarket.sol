@@ -287,7 +287,7 @@ contract LendingMarket {
         uint256 seizeAmount = (repayAmount * liquidationIncentive) / price;
         if (seizeAmount > collateralBalance[borrower]) {
             // Not enough collateral to pay the full incentive. Seize what is there and only
-            // take the repayment it covers, rounded up in the protocol's favour.
+            // take the repayment it covers, rounded up so the liquidator never underpays.
             seizeAmount = collateralBalance[borrower];
             repayAmount = (seizeAmount * price + liquidationIncentive - 1) / liquidationIncentive;
         }
