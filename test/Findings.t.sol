@@ -190,6 +190,26 @@ contract FindingsTest is Test {
 
         assertEq(market.collateralFactor(), 0.8e18);
     }
+
+    // Anyone can call initialize() on the bare implementation and make themselves its admin.
+    // There is no delegatecall or selfdestruct today, so no impact, but a future version could add one.
+    function test_F6_implementation_cannot_be_initialized() public {
+        LendingMarket impl = new LendingMarket();
+
+        vm.expectRevert("already initialized");
+        impl.initialize(
+            address(this),
+            address(this),
+            address(wethOracle),
+            address(base),
+            address(weth),
+            0.8e18,
+            INCENTIVE,
+            0
+        );
+
+        assertEq(impl.admin(), address(0));
+    }
 }
 
 /// @notice A feed that quotes 8 decimals, like most Chainlink USD feeds.
