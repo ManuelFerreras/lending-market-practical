@@ -180,9 +180,9 @@ contract FindingsTest is Test {
         assertEq(market.borrowRatePerSecond(), RATE_PER_SECOND);
     }
 
-    // With a 95% collateral factor and a 10% incentive, every liquidation takes 1.10 of collateral
-    // value per 1.00 repaid but frees only 0.95 of borrowing power, so health falls with each
-    // liquidation and the position ends as bad debt.
+    // With a 95% collateral factor and a 10% incentive, repaying 1.00 seizes 1.10 of collateral,
+    // which cuts borrowing power by 0.95 * 1.10 = 1.045. Debt falls slower than borrowing power,
+    // so each liquidation leaves the position less healthy and it ends as bad debt.
     function test_F5_collateral_factor_times_incentive_must_stay_below_one() public {
         vm.prank(admin);
         vm.expectRevert("cf * incentive too high");
