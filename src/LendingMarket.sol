@@ -30,6 +30,9 @@ contract LendingMarket {
     /// @dev Highest borrow rate governance can set, 100% APR expressed per second.
     uint256 internal constant MAX_BORROW_RATE = 1e18 / uint256(365 days);
 
+    /// @dev Highest liquidation incentive governance can set, a 50% bonus.
+    uint256 internal constant MAX_LIQUIDATION_INCENTIVE = 1.5e18;
+
     // -------------------------------------------------------------------------------------------
     // Storage
     // -------------------------------------------------------------------------------------------
@@ -122,6 +125,9 @@ contract LendingMarket {
     ) external {
         require(!_initialized, "already initialized");
         _initialized = true;
+
+        require(IPriceOracle(oracle_).decimals() == 18, "oracle decimals");
+        _checkParameters(collateralFactor_, liquidationIncentive_, borrowRatePerSecond_);
 
         admin = admin_;
         pauseGuardian = pauseGuardian_;
@@ -359,6 +365,19 @@ contract LendingMarket {
         return (amount * FACTOR) / baseSupplyIndex;
     }
 
+    function _checkParameters(
+        uint256 collateralFactor_,
+        uint256 liquidationIncentive_,
+        uint256 borrowRatePerSecond_
+    ) internal pure {
+        require(collateralFactor_ <= FACTOR, "cf too high");
+        require(liquidationIncentive_ >= FACTOR, "incentive below par");
+        require(liquidationIncentive_ <= MAX_LIQUIDATION_INCENTIVE, "incentive too high");
+        // At or above 1, each liquidation cuts borrowing power by at least as much as it cuts debt.
+        require(collateralFactor_ * liquidationIncentive_ < FACTOR * FACTOR, "cf * incentive too high");
+        require(borrowRatePerSecond_ <= MAX_BORROW_RATE, "rate too high");
+    }
+
     // -------------------------------------------------------------------------------------------
     // Administration
     // -------------------------------------------------------------------------------------------
@@ -374,11 +393,7 @@ contract LendingMarket {
         external
         onlyAdmin
     {
-        require(collateralFactor_ <= FACTOR, "cf too high");
-        require(liquidationIncentive_ >= FACTOR, "incentive below par");
-        // At or above 1, each liquidation cuts borrowing power by at least as much as it cuts debt.
-        require(collateralFactor_ * liquidationIncentive_ < FACTOR * FACTOR, "cf * incentive too high");
-        require(borrowRatePerSecond_ <= MAX_BORROW_RATE, "rate too high");
+        _checkParameters(collateralFactor_, liquidationIncentive_, borrowRatePerSecond_);
 
         accrueInterest();
 
