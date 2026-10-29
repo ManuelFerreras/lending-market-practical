@@ -110,4 +110,4 @@ Storage layout matches the baseline exactly (19 variables in 18 slots) and all 3
 - Prioritised: liquidation and pricing, then accrual order and admin bounds, all shippable as a plain `upgradeTo`.
 - Left out: bad debt, pause semantics and rounding, which need a design decision or new storage.
 - Unsure: the 75 minute price age is my guess at the live heartbeat, and stale feeds now block liquidations, so I would check both first.
-- AI tooling: Claude Code ran two audit passes and wrote the tests and fixes while I read each diff. I rejected its idea to scale every price read by `decimals()` and check once when the feed is wired.
+- AI tooling: Claude Code did the audit passes, tests and fixes inside a workflow I wrote before starting: no fix without a test that fails on the original, and a blind review agent grading the result. That review said a solvency invariant would catch F-1. It cannot, because F-1 moves collateral and never touches base accounting, so I added a payout invariant that does fail on the original.
