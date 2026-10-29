@@ -60,14 +60,14 @@ See `script/Deploy.s.sol` for the current staging configuration.
 | F-1 | Critical | `liquidate` seizes collateral without converting by price | `test_F1_*`, `testFuzz_liquidation_*` |
 | F-2 | High | The pause guardian can replace the oracle | `test_F2_guardian_cannot_replace_the_oracle` |
 | F-3 | High | The oracle answer is used with no sign, age or decimals check | `test_F3_*` |
-| F-4 | Medium | `withdrawCollateral` checks health on stale debt | `test_F4_withdraw_collateral_checks_health_on_accrued_debt` |
 | F-5 | High | Risk parameters have no bounds, so one bad value can freeze the market | `test_F5_*` |
+| F-4 | Medium | `withdrawCollateral` checks health on stale debt | `test_F4_withdraw_collateral_checks_health_on_accrued_debt` |
 | F-6 | Low | The bare implementation can be initialized by anyone | `test_F6_implementation_cannot_be_initialized` |
 
-The finding tests are in `test/Findings.t.sol`. Each one fails on the baseline commit and passes here. `test/Invariant.t.sol` adds an accounting invariant over random supply, borrow, liquidation, price and time moves.
+IDs are in the order I found them. The finding tests are in `test/Findings.t.sol`, and each one fails on the baseline commit and passes here. `test/Freeze.t.sol` reproduces the F-5 freeze on the live version. `test/Invariant.t.sol` checks that totals match the sum of accounts over random actions. It also holds on the baseline, so it guards the fixes rather than proving a finding.
 
 ### F-1: Liquidation ignores the collateral price
-**Impact.** `seizeAmount = repayAmount * liquidationIncentive / FACTOR` treats a base amount as a collateral amount, so any liquidation can take the whole collateral balance. Anyone can do it to any unhealthy position and the debt left behind falls on suppliers, so Critical.
+**Impact.** `seizeAmount = repayAmount * liquidationIncentive / FACTOR` treats a base amount as a collateral amount, so on Bob's 10 WETH position any repay above about 9.1 base takes everything. Anyone can do it to any unhealthy position and the debt left behind falls on suppliers, which makes it Critical.
 **Exploit.** Bob posts 10 WETH at 2,000, borrows 15,000, and WETH dips to 1,800 (borrowing power 14,400). A liquidator repays 1,000 and takes all 10 WETH, worth 18,000, while Bob still owes 14,000 with no collateral.
 **Fix.** The seize is now `repayAmount * liquidationIncentive / price`. If that exceeds the balance, the liquidator gets the whole balance and pays only `ceil(seize * price / incentive)`.
 
@@ -77,22 +77,22 @@ The finding tests are in `test/Findings.t.sol`. Each one fails on the baseline c
 **Fix.** `setOracle` is now `onlyAdmin`, same selector.
 
 ### F-3: Oracle answer is trusted blindly
-**Impact.** `getPrice` returns `uint256(answer)` with no check on sign, age or decimals, so a negative answer wraps to a huge number and a frozen or mis-scaled feed misprices every position. Any feed fault becomes a total loss of liquidity or collateral, so High.
+**Impact.** `getPrice` returns `uint256(answer)` with no check on sign, age or decimals, so a negative answer wraps to a huge number and a frozen or mis-scaled feed misprices every position. A single feed fault can cost the whole pool, and that needs no privileged key, hence High.
 **Exploit.** The feed reports -1 and Bob borrows all 100,000 of liquidity against 1 wei of WETH. Or the feed freezes at 2,000 while WETH falls, and a day later Bob still borrows 16,000 against 10 WETH.
-**Fix.** `getPrice` requires `answer > 0` and an answer younger than `MAX_PRICE_AGE`, a constant set to a one hour heartbeat plus 15 minutes. `setOracle` and `initialize` require `decimals() == 18`, the scale the market is specified in.
+**Fix.** `getPrice` requires `answer > 0` and an answer no older than `MAX_PRICE_AGE`, a constant set to a one hour heartbeat plus 15 minutes. `setOracle` and `initialize` require `decimals() == 18`, the scale the market is specified in.
 
 ### F-4: Collateral withdrawal does not accrue first
-**Impact.** `withdrawCollateral` runs `isHealthy` on the last stored borrow index, so a borrower can pull collateral and leave a position that is already underwater. Medium, because the gap is only the interest since the last accrual.
+**Impact.** `withdrawCollateral` runs `isHealthy` on the last stored borrow index, so a borrower can pull collateral and leave a position that is already underwater. The gap is only the interest since the last accrual, which keeps it at Medium.
 **Exploit.** Bob borrows 15,000 against 10 WETH (limit 16,000) and the market sits idle for a year, so he really owes 15,750. He withdraws 0.6 WETH, leaving 15,040 of borrowing power, and it passes because the check still reads 15,000.
 **Fix.** `withdrawCollateral` calls `accrueInterest()` before the health check, as `borrow` and `liquidate` already do.
 
 ### F-5: Risk parameters are unbounded
 **Impact.** `setParameters` and `initialize` accept any rate, any incentive and any collateral factor and incentive pair, so one wrong proposal can wipe out borrowers and freeze the market. That is a privileged role acting within its powers by mistake, which is High on the brief's scale.
-**Exploit.** Governance means 5% a year but passes `0.05e18` per second, so each 12 second accrual adds 60% to every debt and every borrower is liquidatable within a few blocks. I measured an overflow after about 100 accruals, after which every accruing function reverts, `setParameters` included, and only an upgrade recovers.
+**Exploit.** Governance means 5% a year but passes `0.05e18` per second, so each 12 second accrual adds 60% to every debt and every borrower is liquidatable within a few blocks. `test/Freeze.t.sol` shows the index overflowing after about 100 accruals, after which every accruing function reverts, `setParameters` included, and only an upgrade recovers.
 **Fix.** The rate is capped at 100% APR, the incentive at 1.5x, and `collateralFactor * liquidationIncentive` must stay below 1, because at or above 1 each liquidation leaves the position less healthy. Both functions share one `_checkParameters`.
 
 ### F-6: Implementation can be initialized
-**Impact.** The implementation is deployed bare, so anyone can call `initialize` on it and become its admin. Nothing is at risk today because it has no `delegatecall` or `selfdestruct`, so Low.
+**Impact.** The implementation is deployed bare, so anyone can call `initialize` on it and become its admin. It has no `delegatecall` or `selfdestruct`, so nothing is at risk today and I rate it Low.
 **Exploit.** Anyone calls `initialize` directly on the implementation address.
 **Fix.** A constructor sets `_initialized` in the implementation's own storage, which the proxy never reads.
 
@@ -111,4 +111,4 @@ No state variable was added, moved or retyped. `forge inspect LendingMarket stor
 - Prioritised: liquidation and pricing first, then accrual order and admin bounds, all as logic or constants so it ships as a plain `upgradeTo`.
 - Left out on purpose: bad debt write-down, pause semantics and rounding, which need a design decision or new storage.
 - Unsure: the 75 minute price age is a guess at the production heartbeat, and `isHealthy` now reverts on a stale feed, so liquidation bots must handle that.
-- AI tooling: I worked with Claude Code, which ran two parallel audit passes, wrote each test and fix and committed as it went while I read the diffs. It rated F-5 High, I cut it to Medium, then restored High after we measured the overflow and I reread the brief's scale.
+- AI tooling: I worked with Claude Code, which ran two parallel audit passes, wrote each test and fix and committed as it went while I read the diffs. One pass proposed scaling every price read by `decimals()`, and I rejected that for a single check when the feed is wired, since the market is specified in 1e18.
