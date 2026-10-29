@@ -116,6 +116,32 @@ contract FindingsTest is Test {
         assertApproxEqAbs(market.borrowBalanceOf(borrower), 15_000e18 - charged, 1);
     }
 
+    // For any price that makes the 10 WETH / 15,000 position liquidatable and any repay, the
+    // liquidator never receives more collateral value than they paid times the incentive, and the
+    // borrower's debt falls by exactly what the liquidator paid.
+    function testFuzz_liquidation_never_pays_more_than_the_incentive(uint256 price, uint256 repay) public {
+        price = bound(price, 100e18, 1_870e18);
+        repay = bound(repay, 1e18, 20_000e18);
+
+        _postCollateral(borrower, 10e18);
+        vm.prank(borrower);
+        market.borrow(15_000e18);
+
+        wethOracle.setPrice(int256(price));
+        _fundLiquidator(repay);
+
+        vm.prank(liquidator);
+        market.liquidate(borrower, repay);
+
+        uint256 paid = repay - base.balanceOf(liquidator);
+        uint256 seized = weth.balanceOf(liquidator);
+
+        assertLe(seized * price, paid * INCENTIVE, "seized more than repay plus incentive");
+        assertLe(seized, 10e18);
+        assertApproxEqAbs(market.borrowBalanceOf(borrower), 15_000e18 - paid, 1);
+        assertEq(market.collateralBalance(borrower), 10e18 - seized);
+    }
+
     // The pause guardian is only meant to stop the market. With setOracle it can point pricing
     // at a feed that says 1 WETH = 1,000,000 base, post 1 WETH and borrow the whole pool.
     function test_F2_guardian_cannot_replace_the_oracle() public {
