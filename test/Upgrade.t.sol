@@ -11,8 +11,8 @@ import {LendingMarketV1} from "./legacy/LendingMarketV1.sol";
 
 /**
  * @notice Deploys the contract as it is live today (test/legacy/LendingMarketV1.sol, the baseline
- *         with only the contract name changed), builds up balances and interest, then upgrades
- *         the proxy to the fixed implementation the way the proxy admin would.
+ *         with only the contract name and the two import paths changed), builds up balances and
+ *         interest, then upgrades the proxy to the fixed implementation the way the proxy admin would.
  */
 contract UpgradeTest is Test {
     uint256 internal constant RATE_PER_SECOND = uint256(0.05e18) / 365 days;

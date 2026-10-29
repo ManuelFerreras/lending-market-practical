@@ -215,8 +215,8 @@ contract FindingsTest is Test {
     }
 
     // Governance means 5% a year but passes 0.05e18 as the per second rate. Each accrual now
-    // grows the borrow index by 60%. I measured an overflow after 99 accruals, about 20 minutes at
-    // one per block. From then on accrueInterest() reverts, and so does setParameters(), which
+    // grows the borrow index by 60%. I measured an overflow after about 100 accruals, 20 minutes
+    // at one per block. From then on accrueInterest() reverts, and so does setParameters(), which
     // accrues first, so the admin cannot lower the rate back without an upgrade.
     function test_F5_borrow_rate_above_the_cap_is_rejected() public {
         vm.prank(admin);
