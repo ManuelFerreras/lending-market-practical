@@ -95,4 +95,20 @@ contract FindingsTest is Test {
         assertEq(market.collateralBalance(borrower), 10e18 - expectedSeize, "borrower lost too much");
         assertApproxEqAbs(market.borrowBalanceOf(borrower), 14_000e18, 1);
     }
+
+    // The pause guardian is only meant to stop the market. With setOracle it can point pricing
+    // at a feed that says 1 WETH = 1,000,000 base, post 1 WETH and borrow the whole pool.
+    function test_F2_guardian_cannot_replace_the_oracle() public {
+        MockOracle rigged = new MockOracle(1_000_000e18);
+
+        vm.prank(guardian);
+        vm.expectRevert("not admin");
+        market.setOracle(address(rigged));
+
+        assertEq(address(market.oracle()), address(wethOracle), "guardian changed pricing");
+
+        vm.prank(admin);
+        market.setOracle(address(rigged));
+        assertEq(address(market.oracle()), address(rigged), "admin must still be able to rewire");
+    }
 }
