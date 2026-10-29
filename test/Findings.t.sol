@@ -167,6 +167,29 @@ contract FindingsTest is Test {
 
         assertEq(market.collateralBalance(borrower), 10e18);
     }
+
+    // Governance means 5% a year but passes 0.05e18 as the per second rate. Each accrual now
+    // grows the borrow index by 60%. I measured an overflow after 99 accruals, about 20 minutes at
+    // one per block. From then on accrueInterest() reverts, and so does setParameters(), which
+    // accrues first, so the admin cannot lower the rate back without an upgrade.
+    function test_F5_borrow_rate_above_the_cap_is_rejected() public {
+        vm.prank(admin);
+        vm.expectRevert("rate too high");
+        market.setParameters(0.8e18, INCENTIVE, 0.05e18);
+
+        assertEq(market.borrowRatePerSecond(), RATE_PER_SECOND);
+    }
+
+    // With a 95% collateral factor and a 10% incentive, every liquidation takes 1.10 of collateral
+    // value per 1.00 repaid but frees only 0.95 of borrowing power, so health falls with each
+    // liquidation and the position ends as bad debt.
+    function test_F5_collateral_factor_times_incentive_must_stay_below_one() public {
+        vm.prank(admin);
+        vm.expectRevert("cf * incentive too high");
+        market.setParameters(0.95e18, INCENTIVE, RATE_PER_SECOND);
+
+        assertEq(market.collateralFactor(), 0.8e18);
+    }
 }
 
 /// @notice A feed that quotes 8 decimals, like most Chainlink USD feeds.
