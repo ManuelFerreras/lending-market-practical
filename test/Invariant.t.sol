@@ -21,6 +21,9 @@ contract MarketHandler is Test {
     address[3] internal actors = [address(0xA1), address(0xB2), address(0xC3)];
     int256 internal lastPrice = 2_000e18;
 
+    /// @dev Set if any liquidation paid out more collateral value than repay times the incentive.
+    bool public overSeized;
+
     constructor(LendingMarket market_, MockERC20 base_, MockERC20 weth_, MockOracle oracle_) {
         market = market_;
         base = base_;
@@ -106,8 +109,14 @@ contract MarketHandler is Test {
         for (uint256 i; i < actors.length; i++) {
             if (market.borrowBalanceOf(actors[i]) > 0 && !market.isHealthy(actors[i])) victim = actors[i];
         }
+        uint256 baseBefore = base.balanceOf(who);
+        uint256 wethBefore = weth.balanceOf(who);
         vm.prank(who);
-        try market.liquidate(victim, amount) {} catch {}
+        try market.liquidate(victim, amount) {
+            uint256 paid = baseBefore - base.balanceOf(who);
+            uint256 seized = weth.balanceOf(who) - wethBefore;
+            if (seized * uint256(lastPrice) > paid * market.liquidationIncentive()) overSeized = true;
+        } catch {}
     }
 
     function movePrice(uint256 price) external {
@@ -123,8 +132,9 @@ contract MarketHandler is Test {
 }
 
 /**
- * @notice Accounting invariants. These held on the baseline too. They are here to pin that none of
- *         the fixes broke the bookkeeping between per-account principals, totals and token balances.
+ * @notice Accounting invariants. The bookkeeping ones held on the baseline too and pin that the fixes
+ *         kept principals, totals and balances in step. invariant_liquidation_never_overpays fails on
+ *         the baseline (F-1).
  */
 contract InvariantTest is Test {
     LendingMarket internal market;
@@ -173,6 +183,28 @@ contract InvariantTest is Test {
         assertEq(market.totalSupplyPrincipal(), supplySum);
         assertEq(market.totalBorrowPrincipal(), borrowSum);
         assertEq(market.totalCollateral(), collateralSum);
+    }
+
+    /// forge-config: default.invariant.depth = 200
+    function invariant_liquidation_never_overpays() public view {
+        assertFalse(handler.overSeized(), "a liquidation seized more than repay times incentive");
+    }
+
+    /// forge-config: default.invariant.depth = 200
+    function invariant_base_covers_supplier_claims() public view {
+        // Unpaid debt stays in the totals, so cash plus debt covers what suppliers are owed, up to
+        // rounding drift. accrueInterest() rounds the borrow index down but credits suppliers the
+        // unrounded interest, so suppliers can be owed a few thousand wei more (see README, Low).
+        uint256 assets =
+            base.balanceOf(address(market)) + market.presentValueBorrow(market.totalBorrowPrincipal());
+        uint256 owed = market.presentValueSupply(market.totalSupplyPrincipal());
+        assertGe(assets + owed / 1e15 + 10, owed, "suppliers are owed more than the market holds");
+    }
+
+    /// forge-config: default.invariant.depth = 200
+    function invariant_market_can_always_accrue() public {
+        // The handler swallows reverts, so check here that the market never reaches a frozen state.
+        market.accrueInterest();
     }
 
     /// forge-config: default.invariant.depth = 200
