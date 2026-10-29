@@ -111,4 +111,51 @@ contract FindingsTest is Test {
         market.setOracle(address(rigged));
         assertEq(address(market.oracle()), address(rigged), "admin must still be able to rewire");
     }
+
+    // The feed reports -1. getPrice() casts it to 2^256 - 1, so 1 wei of WETH looks like enough
+    // collateral to borrow all 100,000 of base liquidity.
+    function test_F3_negative_price_cannot_be_borrowed_against() public {
+        _postCollateral(borrower, 1);
+        wethOracle.setPrice(-1);
+
+        vm.prank(borrower);
+        vm.expectRevert("bad price");
+        market.borrow(LIQUIDITY);
+
+        assertEq(base.balanceOf(address(market)), LIQUIDITY, "pool was drained");
+    }
+
+    // The feed stops updating at 2,000 while WETH trades lower. A day later Bob can still borrow
+    // 16,000 against 10 WETH at the frozen price.
+    function test_F3_stale_price_cannot_be_borrowed_against() public {
+        _postCollateral(borrower, 10e18);
+        vm.warp(block.timestamp + 1 days);
+
+        vm.prank(borrower);
+        vm.expectRevert("stale price");
+        market.borrow(16_000e18);
+
+        assertEq(base.balanceOf(borrower), 0, "borrowed against a stale price");
+    }
+
+    // The admin rewires to a Chainlink-style feed quoting 8 decimals. Every price would read
+    // 1e10 times too low and every borrower would become liquidatable at once.
+    function test_F3_oracle_with_wrong_decimals_is_rejected() public {
+        EightDecimalOracle feed = new EightDecimalOracle();
+
+        vm.prank(admin);
+        vm.expectRevert("oracle decimals");
+        market.setOracle(address(feed));
+
+        assertEq(address(market.oracle()), address(wethOracle));
+    }
+}
+
+/// @notice A feed that quotes 8 decimals, like most Chainlink USD feeds.
+contract EightDecimalOracle {
+    uint8 public constant decimals = 8;
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (1, 2_000e8, block.timestamp, block.timestamp, 1);
+    }
 }
