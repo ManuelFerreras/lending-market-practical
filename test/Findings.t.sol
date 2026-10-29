@@ -96,6 +96,26 @@ contract FindingsTest is Test {
         assertApproxEqAbs(market.borrowBalanceOf(borrower), 14_000e18, 1);
     }
 
+    // Same position, but WETH falls to 1,000, so 10 WETH (10,000) no longer covers 15,000 of debt
+    // plus the incentive. The liquidator offers 15,000. They should get all 10 WETH and pay only the
+    // 9,090.9 it is worth at a 10% discount, leaving the rest as debt on the borrower.
+    function test_F1_capped_seize_charges_only_the_repay_it_covers() public {
+        _postCollateral(borrower, 10e18);
+        vm.prank(borrower);
+        market.borrow(15_000e18);
+
+        wethOracle.setPrice(1_000e18);
+        _fundLiquidator(15_000e18);
+
+        vm.prank(liquidator);
+        market.liquidate(borrower, 15_000e18);
+
+        uint256 charged = (10e18 * 1_000e18 + INCENTIVE - 1) / INCENTIVE;
+        assertEq(weth.balanceOf(liquidator), 10e18);
+        assertEq(base.balanceOf(liquidator), 15_000e18 - charged, "liquidator overpaid");
+        assertApproxEqAbs(market.borrowBalanceOf(borrower), 15_000e18 - charged, 1);
+    }
+
     // The pause guardian is only meant to stop the market. With setOracle it can point pricing
     // at a feed that says 1 WETH = 1,000,000 base, post 1 WETH and borrow the whole pool.
     function test_F2_guardian_cannot_replace_the_oracle() public {
