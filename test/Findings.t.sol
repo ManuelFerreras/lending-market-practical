@@ -237,6 +237,29 @@ contract FindingsTest is Test {
         assertEq(market.collateralFactor(), 0.8e18);
     }
 
+    // A collateral factor of 0 (a market being wound down) passes the cf * incentive bound with any
+    // incentive. At 50x, a 400 repay at 2,000 would seize all 10 WETH.
+    function test_F5_incentive_above_the_cap_is_rejected() public {
+        vm.prank(admin);
+        vm.expectRevert("incentive too high");
+        market.setParameters(0, 50e18, RATE_PER_SECOND);
+
+        assertEq(market.liquidationIncentive(), INCENTIVE);
+    }
+
+    // A new market deployed through Deploy.s.sol goes through initialize(), not setParameters(),
+    // so the same unit slip in the rate must be caught there too.
+    function test_F5_initialize_applies_the_same_bounds() public {
+        LendingMarket impl = new LendingMarket();
+        bytes memory initData = abi.encodeCall(
+            LendingMarket.initialize,
+            (admin, guardian, address(wethOracle), address(base), address(weth), 0.8e18, INCENTIVE, 0.05e18)
+        );
+
+        vm.expectRevert("rate too high");
+        new TransparentUpgradeableProxy(address(impl), admin, initData);
+    }
+
     // Anyone can call initialize() on the bare implementation and make themselves its admin.
     // There is no delegatecall or selfdestruct today, so no impact, but a future version could add one.
     function test_F6_implementation_cannot_be_initialized() public {
