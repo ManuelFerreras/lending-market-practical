@@ -201,6 +201,8 @@ contract LendingMarket {
 
     function withdrawCollateral(uint256 amount) external whenNotPaused {
         require(amount > 0, "zero amount");
+        accrueInterest();
+
         require(collateralBalance[msg.sender] >= amount, "insufficient collateral");
 
         collateralBalance[msg.sender] -= amount;
